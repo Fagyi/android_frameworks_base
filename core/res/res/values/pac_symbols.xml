@@ -16,6 +16,10 @@
 -->
 <resources>
 
+  <!-- Animation of toggle last app -->
+  <java-symbol type="anim" name="last_app_in" />
+  <java-symbol type="anim" name="last_app_out" />
+
   <!-- AOKP easter egg -->
   <java-symbol type="drawable" name="aokplogo" />
   <java-symbol type="drawable" name="aokplogo_alt" />
