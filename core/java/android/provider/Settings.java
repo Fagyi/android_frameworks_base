@@ -3533,6 +3533,7 @@ public final class Settings {
          * 4 - Voice search
          * 5 - In-app search
          * 6 - Launch Camera
+         * 7 - Last app
          * @hide
          */
         public static final String KEY_HOME_LONG_PRESS_ACTION = "key_home_long_press_action";
@@ -8331,12 +8332,6 @@ public final class Settings {
         public static final String NAVIGATION_BAR_WIDTH = "navigation_bar_width";
 
         /**
-         * Navigation recent long press
-         * @hide
-         */
-        public static final String NAVBAR_RECENT_LONG_PRESS = "navbar_recent_long_press";
-
-        /**
          * Wether navigation bar in power menu is enabled or not
          * @hide
          */
@@ -8824,6 +8819,13 @@ public final class Settings {
          * @hide
          */
         public static final String HEADS_UP_FLOATING_WINDOW = "heads_up_floating_window";
+
+        /**
+         * Heads up: Option to exclude from lockscreen, default is 0 (off).
+         *
+         * @hide
+         */
+        public static final String HEADS_UP_EXCLUDE_FROM_LOCK_SCREEN = "heads_up_exclude_from_lock_screen";
 
         /**
          * HALO, should default to 0 (no, do not show)

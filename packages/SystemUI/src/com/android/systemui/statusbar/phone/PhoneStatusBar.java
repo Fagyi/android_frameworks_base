@@ -35,6 +35,7 @@ import android.annotation.ChaosLab;
 import android.annotation.ChaosLab.Classification;
 import android.app.ActivityManager;
 import android.app.ActivityManagerNative;
+import android.app.ActivityOptions;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.StatusBarManager;
@@ -45,6 +46,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.content.res.ThemeConfig;
 import android.content.res.Resources;
@@ -82,7 +84,6 @@ import android.util.Log;
 import android.util.Pair;
 import android.view.Display;
 import android.view.Gravity;
-import android.view.KeyEvent;
 import android.view.HapticFeedbackConstants;
 import android.view.IWindowManager;
 import android.view.MotionEvent;
@@ -106,6 +107,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.android.internal.statusbar.StatusBarIcon;
+import com.android.internal.util.cm.ActionUtils;
 import com.android.systemui.BatteryMeterView.BatteryMeterMode;
 import com.android.systemui.DemoMode;
 import com.android.systemui.DockBatteryMeterView;
@@ -127,7 +129,6 @@ import com.android.systemui.statusbar.policy.Clock;
 import com.android.systemui.statusbar.policy.DateView;
 import com.android.systemui.statusbar.policy.DockBatteryController;
 import com.android.systemui.statusbar.policy.HeadsUpNotificationView;
-import com.android.systemui.statusbar.policy.KeyButtonView;
 import com.android.systemui.statusbar.policy.LocationController;
 import com.android.systemui.statusbar.policy.MSimNetworkController;
 import com.android.systemui.statusbar.policy.NetworkController;
@@ -139,6 +140,7 @@ import com.android.systemui.pac.StatusHeaderMachine;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.List;
 import java.net.URISyntaxException;
 
 public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
@@ -436,9 +438,6 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
                     Settings.System.NAVBAR_LEFT_IN_LANDSCAPE), false, this);
             resolver.registerContentObserver(Settings.PAC.getUriFor(
                     Settings.PAC.STATUS_BAR_CUSTOM_HEADER), false, this);
-            resolver.registerContentObserver(Settings.PAC.getUriFor(
-                    Settings.PAC.NAVBAR_RECENT_LONG_PRESS), false, this,
-                    UserHandle.USER_ALL);
             // Pie controls
             resolver.registerContentObserver(Settings.PAC.getUriFor(
                     Settings.PAC.PIE_CONTROLS), false, this,
@@ -1405,11 +1404,11 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         }
     };
 
-    private View.OnLongClickListener mRecentsLongClickListener = new View.OnLongClickListener() {
+    private View.OnLongClickListener mRecentsLongPressListener = new View.OnLongClickListener() {
+        @Override
         public boolean onLongClick(View v) {
-            awakenDreams();
-            recentsLongPress();
-            return true;
+            cancelPreloadingRecentTasksList();
+            return ActionUtils.switchToLastApp(mContext, mCurrentUserId);
         }
     };
 
@@ -1453,8 +1452,9 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
 
     private void prepareNavigationBarView() {
         mNavigationBarView.reorient();
-        mNavigationBarView.setListeners(mRecentsClickListener, mRecentsLongClickListener,
-                mRecentsPreloadOnTouchListener, mHomeSearchActionListener);
+        mNavigationBarView.setListeners(mRecentsClickListener,
+                mRecentsPreloadOnTouchListener, mRecentsLongPressListener,
+                mHomeSearchActionListener);
         updateSearchPanel();
     }
 
@@ -2958,16 +2958,6 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
                 enabled ? 1 : 0);
     }
 
-    private int computeBarMode(int oldVis, int newVis, BarTransitions transitions,
-            int transientFlag, int translucentFlag) {
-        final int oldMode = barMode(oldVis, transientFlag, translucentFlag);
-        final int newMode = barMode(newVis, transientFlag, translucentFlag);
-        if (oldMode == newMode) {
-            return -1; // no mode change
-        }
-        return newMode;
-    }
-
     @Override  // CommandQueue
     public void toggleNotificationShade() {
         int msg = (mExpandedVisible)
@@ -3002,6 +2992,16 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         }
         mHandler.removeMessages(msg);
         mHandler.sendEmptyMessage(msg);
+    }
+
+    private int computeBarMode(int oldVis, int newVis, BarTransitions transitions,
+            int transientFlag, int translucentFlag) {
+        final int oldMode = barMode(oldVis, transientFlag, translucentFlag);
+        final int newMode = barMode(newVis, transientFlag, translucentFlag);
+        if (oldMode == newMode) {
+            return -1; // no mode change
+        }
+        return newMode;
     }
 
     private int barMode(int vis, int transientFlag, int translucentFlag) {
@@ -3768,38 +3768,6 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
             if (mSignalTextView != null) {
                 mSignalTextView.setStyle(signalStyle);
             }
-        }
-    }
-
-    private void recentsLongPress() {
-        int navbarRecentLongPress = Settings.PAC.getIntForUser(mContext.getContentResolver(),
-                Settings.PAC.NAVBAR_RECENT_LONG_PRESS, 0, mCurrentUserId);
-        switch(navbarRecentLongPress) {
-        case 0:
-            break;
-        case 1:
-            toggleLastApp();
-            break;
-        case 2:
-            toggleScreenshot();
-            break;
-        case 3:
-            toggleKillApp();
-            break;
-        case 4:
-            toggleNotificationShade();
-            break;
-        case 5:
-            toggleQSShade();
-            break;
-        case 6:
-            try {
-                IWindowManager windowManagerService = IWindowManager.Stub.asInterface(
-                    ServiceManager.getService(Context.WINDOW_SERVICE));
-                windowManagerService.toggleGlobalMenu();
-            } catch (RemoteException e) {
-            }
-            break;
         }
     }
 

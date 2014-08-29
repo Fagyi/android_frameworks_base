@@ -58,6 +58,9 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
+import com.android.internal.util.cm.LockscreenTargetUtils;
+import com.android.internal.util.cm.NavigationRingConstants;
+import com.android.internal.util.cm.NavigationRingHelpers;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.systemui.R;
 import com.android.systemui.statusbar.BaseStatusBar;
@@ -84,8 +87,8 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
     private NavBarReceiver mNavBarReceiver;
     private LockPatternUtils mLockUtils;
     private OnClickListener mRecentsClickListener;
-    private OnLongClickListener mRecentsLongClickListener;
     private OnTouchListener mRecentsPreloadListener;
+    private OnLongClickListener mRecentsLongClickListener;
     private OnTouchListener mHomeSearchActionListener;
 
     final Display mDisplay;
@@ -336,11 +339,12 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
         return mInEditMode;
     }
 
-    /* package */ void setListeners(OnClickListener recentsClickListener, OnLongClickListener recentsLongClickListener,
-            OnTouchListener recentsPreloadListener, OnTouchListener homeSearchActionListener) {
+    /* package */ void setListeners(OnClickListener recentsClickListener,
+            OnTouchListener recentsPreloadListener, OnLongClickListener recentsLongClickListener,
+            OnTouchListener homeSearchActionListener) {
         mRecentsClickListener = recentsClickListener;
-        mRecentsLongClickListener = recentsLongClickListener;
         mRecentsPreloadListener = recentsPreloadListener;
+        mRecentsLongClickListener = recentsLongClickListener;
         mHomeSearchActionListener = homeSearchActionListener;
         updateButtonListeners();
     }
@@ -362,8 +366,8 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
         View recentView = findButton(NavbarEditor.NAVBAR_RECENT);
         if (recentView != null) {
             recentView.setOnClickListener(mRecentsClickListener);
-            recentView.setOnLongClickListener(mRecentsLongClickListener);
             recentView.setOnTouchListener(mRecentsPreloadListener);
+            recentView.setOnLongClickListener(mRecentsLongClickListener);
         }
         View homeView = findButton(NavbarEditor.NAVBAR_HOME);
         if (homeView != null) {
@@ -640,7 +644,8 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
                 Settings.PAC.getInt(mContext.getContentResolver(),
                         Settings.PAC.LOCKSCREEN_NOTIFICATIONS_PRIVACY_MODE, 0) == 0;
 
-        setVisibleOrGone(getSearchLight(), showSearch && mModLockDisabled);
+        setVisibleOrGone(getSearchLight(), showSearch && mModLockDisabled
+                && NavigationRingHelpers.hasLockscreenTargets(mContext));
         setVisibleOrGone(getCameraButton(), showCamera);
         setVisibleOrGone(getNotifsButton(), showNotifs && mWasNotifsButtonVisible);
 
