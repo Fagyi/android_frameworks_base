@@ -118,6 +118,7 @@ final class DisplayMagnifier {
         args.argi4 = rectangle.bottom;
         mHandler.obtainMessage(MyHandler.MESSAGE_NOTIFY_RECTANGLE_ON_SCREEN_REQUESTED,
                 args).sendToTarget();
+        args.recycle();
     }
 
     public void onWindowLayersChangedLocked() {
@@ -271,7 +272,7 @@ final class DisplayMagnifier {
             mBorderWidth = (int) TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_DIP, DEFAUTLT_BORDER_WIDTH_DIP,
                             mContext.getResources().getDisplayMetrics());
-            mHalfBorderWidth = (int) (mBorderWidth + 0.5) / 2;
+            mHalfBorderWidth = (mBorderWidth + 1) / 2;
             mWindow = new ViewportWindow(mContext);
             recomputeBoundsLocked();
         }

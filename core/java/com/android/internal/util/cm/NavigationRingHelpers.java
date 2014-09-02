@@ -173,9 +173,9 @@ public class NavigationRingHelpers {
     }
 
     private static TargetDrawable createDrawableForActivity(Resources res, Drawable activityIcon) {
-        Drawable iconBg = res.getDrawable(
+        final Drawable iconBg = res.getDrawable(
                 com.android.internal.R.drawable.ic_navigation_ring_blank_normal);
-        Drawable iconBgActivated = res.getDrawable(
+        final Drawable iconBgActivated = res.getDrawable(
                 com.android.internal.R.drawable.ic_navigation_ring_blank_activated);
 
         // Get the size for the base icon and the activity icon

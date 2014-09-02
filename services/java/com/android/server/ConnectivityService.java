@@ -174,7 +174,7 @@ import javax.net.ssl.SSLSession;
 public class ConnectivityService extends IConnectivityManager.Stub {
     private static final String TAG = "ConnectivityService";
 
-    protected static final boolean DBG = true;
+    protected static final boolean DBG = false;
     protected static final boolean VDBG = false;
 
     protected static final boolean LOGD_RULES = false;
@@ -1642,9 +1642,12 @@ public class ConnectivityService extends IConnectivityManager.Stub {
             return false;
         }
         NetworkStateTracker tracker = mNetTrackers[networkType];
-        DetailedState netState = tracker.getNetworkInfo().getDetailedState();
+        DetailedState netState = DetailedState.DISCONNECTED;
+        if (tracker != null) {
+            netState = tracker.getNetworkInfo().getDetailedState();
+        }
 
-        if (tracker == null || (netState != DetailedState.CONNECTED &&
+        if ((netState != DetailedState.CONNECTED &&
                 netState != DetailedState.CAPTIVE_PORTAL_CHECK) ||
                 tracker.isTeardownRequested()) {
             if (VDBG) {

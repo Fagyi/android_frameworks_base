@@ -209,8 +209,11 @@ public class ImageWallpaper extends WallpaperService {
         public void onDestroy() {
             super.onDestroy();
             if (mReceiver != null) {
-                unregisterReceiver(mReceiver);
+                try {
+                    unregisterReceiver(mReceiver);
+                } catch (Exception ignored) { }
             }
+            mBackground = null;
         }
 
         void updateSurfaceSize(SurfaceHolder surfaceHolder) {
