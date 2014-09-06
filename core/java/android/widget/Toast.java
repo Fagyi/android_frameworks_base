@@ -36,6 +36,8 @@ import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
 
+import com.android.internal.util.pac.AwesomeAnimationHelper;
+
 /**
  * A toast is a view containing a quick little message for the user.  The toast class
  * helps you create and show those.
@@ -329,6 +331,7 @@ public class Toast {
         };
 
         int mGravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
+
         int mX, mY;
         float mHorizontalMargin;
         float mVerticalMargin;
@@ -394,56 +397,8 @@ public class Toast {
                 // the layout direction
                 final Configuration config = mView.getContext().getResources().getConfiguration();
                 final int gravity = Gravity.getAbsoluteGravity(mGravity, config.getLayoutDirection());
-                switch(Settings.PAC.getInt(context.getContentResolver(), Settings.PAC.TOAST_ANIMATION, 1)) {
-                case 0:
-                mParams.windowAnimations = -1;
-                break;
-                case 1:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast;
-                break;
-                case 2:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_Fade;
-                break;
-                case 3:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_SlideRight;
-                break;
-                case 4:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_SlideLeft;
-                break;
-                case 5:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_SlideLeftRight;
-                break;
-                case 6:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_SlideRightLeft;
-                break;
-                case 7:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_Xylon;
-                break;
-                case 8:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_Toko;
-                break;
-                case 9:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_Tn;
-                break;
-                case 10:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_Honami;
-                break;
-                case 11:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_FastFade;
-                break;
-                case 12:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_GrowFade;
-                break;
-                case 13:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_GrowFadeCenter;
-                break;
-                case 14:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_GrowFadeBottom;
-                break;
-                case 15:
-                mParams.windowAnimations = com.android.internal.R.style.Animation_Toast_Translucent;
-                break;
-                }
+                mParams.windowAnimations = AwesomeAnimationHelper.getToastAnimations(Settings.PAC.getInt(context.getContentResolver(),
+                              Settings.PAC.ANIMATION_TOAST, 1));
                 mParams.gravity = gravity;
                 if ((gravity & Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.FILL_HORIZONTAL) {
                     mParams.horizontalWeight = 1.0f;
