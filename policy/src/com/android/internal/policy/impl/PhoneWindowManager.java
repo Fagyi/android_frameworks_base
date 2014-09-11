@@ -1899,6 +1899,11 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         }
     }
 
+    @Override
+    public void sendHomeAction() {
+        launchHomeFromHotKey();
+    }
+
     private void enablePointerLocation() {
         if (mPointerLocationView == null) {
             mPointerLocationView = new PointerLocationView(mContext);

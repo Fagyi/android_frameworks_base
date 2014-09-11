@@ -117,23 +117,11 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
     private int mLeftCursorButtonId;
     private int mRightCursorButtonId;
 
-    final boolean mTablet = isTablet(getContext());
+    final boolean mTablet = isTablet(mContext);
 
     private ArrayList<AwesomeButtonInfo> mNavButtons = new ArrayList<AwesomeButtonInfo>();
 
-    private ContentObserver mSettingsObserver = new ContentObserver(new Handler()) {
-        @Override
-        public void onChange(boolean selfChange) {
-            setupNavigationButtons();
-            setMenuVisibility(mShowMenu, true /* force */);
-        }
-
-        @Override
-        public void onChange(boolean selfChange, Uri uri) {
-            setupNavigationButtons();
-            setMenuVisibility(mShowMenu, true /* force */);
-        }
-    };
+    private ContentObserver mSettingsObserver;
 
     private DelegateViewHelper mDelegateHelper;
     private DeadZone mDeadZone;
@@ -146,6 +134,8 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
 
     private FrameLayout mFlayout;
 
+    private String mUserButtons;
+
     // workaround for LayoutTransitions leaving the nav buttons in a weird state (bug 5549288)
     final static boolean WORKAROUND_INVALID_LAYOUT = true;
     final static int MSG_CHECK_INVALID_LAYOUT = 8686;
@@ -155,6 +145,8 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
 
     // performs manual animation in sync with layout transitions
     private final NavTransitionListener mTransitionListener = new NavTransitionListener();
+
+    private Resources mThemedResources;
 
     private class NavTransitionListener implements TransitionListener {
         private boolean mBackTransitioning;
@@ -197,7 +189,6 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
             // animation as home (if we catch this condition early enough).
             if (getBackButton() != null && !mBackTransitioning && getBackButton().getVisibility() == VISIBLE
                     && mHomeAppearing && getHomeButton() != null && getHomeButton().getAlpha() == 0) {
-                ((KeyButtonView) getBackButton()).resetImage();
                 getBackButton().setAlpha(0);
                 ValueAnimator a = ObjectAnimator.ofFloat(getBackButton(), "alpha", 0, 1);
                 a.setStartDelay(mStartDelay);
@@ -276,6 +267,8 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
                 Context.WINDOW_SERVICE)).getDefaultDisplay();
 
         final Resources res = mContext.getResources();
+        final ContentResolver cr = mContext.getContentResolver();
+
         mBarSize = res.getDimensionPixelSize(R.dimen.navigation_bar_size);
         mVertical = false;
         mShowMenu = false;
@@ -285,6 +278,12 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
         mMenuButtonWidth = res.getDimensionPixelSize(R.dimen.navigation_menu_key_width);
 
         mBarTransitions = new NavigationBarTransitions(this);
+        mBarTransitions.updateResources(res);
+
+        mUserButtons = Settings.PAC.getString(cr, Settings.PAC.NAVIGATION_BAR_BUTTONS);
+        mNavigationBarForceMenu = Settings.PAC.getBoolean(cr, Settings.PAC.NAVIGATION_MENU_FORCE, false);
+        mNavigationBarMenuLocation = Settings.PAC.getInt(cr, Settings.PAC.NAVIGATION_MENU, 0);
+        mShowDpadKeys = Settings.PAC.getBoolean(cr, Settings.PAC.NAVIGATION_BAR_DPAD_KEYS, false);
 
         mCameraDisabledByDpm = isCameraDisabledByDpm();
         watchForDevicePolicyChanges();
@@ -397,39 +396,26 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
         return mCurrentView.findViewById(R.id.show_notifs);
     }
 
-    public void updateResources() {
+    public void updateResources(Resources res) {
+        mThemedResources = res;
         for (int i = 0; i < mRotatedViews.length; i++) {
             ViewGroup container = (ViewGroup) mRotatedViews[i];
             if (container != null) {
                 updateKeyButtonViewResources(container);
                 updateLightsOutResources(container);
-                setupNavigationButtons();
             }
         }
     }
 
     private void updateKeyButtonViewResources(ViewGroup container) {
-        // TODO: fix this for AOKP
-        // Disable the following codes as we don't have CM's Navbar, still waiting for AOKP's fix.
+        if (mCurrentView == null) return;
+        for (final AwesomeConstant k : AwesomeConstant.values()) {
+            final View child = mCurrentView.findViewWithTag(k.value());
 
-        /*ViewGroup midNavButtons = (ViewGroup) container.findViewById(R.id.mid_nav_buttons);
-        if (midNavButtons != null) {
-            final int nChildren = midNavButtons.getChildCount();
-            for (int i = 0; i < nChildren; i++) {
-                final View child = midNavButtons.getChildAt(i);
-                if (child instanceof KeyButtonView) {
-                    ((KeyButtonView) child).updateResources();
-                }
+            if (child instanceof KeyButtonView) {
+                ((KeyButtonView) child).updateResources(mThemedResources);
             }
         }
-        KeyButtonView kbv = (KeyButtonView) findViewById(R.id.one);
-        if (kbv != null) {
-            kbv.updateResources();
-        }
-        kbv = (KeyButtonView) findViewById(R.id.six);
-        if (kbv != null) {
-            kbv.updateResources();
-        }*/
     }
 
     private void updateLightsOutResources(ViewGroup container) {
@@ -444,7 +430,8 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
                     // ImageView keeps track of the resource ID and if it is the same
                     // it will not update the drawable.
                     iv.setImageDrawable(null);
-                    iv.setImageResource(R.drawable.ic_sysbar_lights_out_dot_large);
+                    iv.setImageDrawable(mThemedResources.getDrawable(
+                            R.drawable.ic_sysbar_lights_out_dot_large));
                 }
             }
         }
@@ -481,12 +468,14 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
         mNavigationIconHints = hints;
 
         if (getBackButton() != null) {
-            ((ImageView) getBackButton()).setImageResource(mShowIME
-                    ? R.drawable.ic_sysbar_back_ime
-                    : R.drawable.ic_sysbar_back);
+            if (mShowIME) {
+                ((ImageView) getBackButton()).setImageResource(R.drawable.ic_sysbar_back_ime);
+            } else {
+                ((KeyButtonView) getBackButton()).setImage();
+            }
         }
 
-        readUserConfig();
+        //readUserConfig();
 
         if (getMenuButton() != null && getRightCursorButton() != null) {
             if (mShowIME && mShowDpadKeys) {
@@ -665,7 +654,7 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
     public void setMenuVisibility(final boolean show, final boolean force) {
         if (!force && mShowMenu == show) return;
 
-        readUserConfig();
+        //readUserConfig();
 
         mShowMenu = show;
 
@@ -747,36 +736,45 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
 
-        mContext.getContentResolver().registerContentObserver(Settings.PAC.getUriFor(Settings.PAC.NAVIGATION_BAR_BUTTONS),
-                false, mSettingsObserver);
-        mContext.getContentResolver().registerContentObserver(Settings.PAC.getUriFor(Settings.PAC.NAVIGATION_BAR_DPAD_KEYS),
-                false, mSettingsObserver);
-        mContext.getContentResolver().registerContentObserver(Settings.PAC.getUriFor(Settings.PAC.NAVIGATION_MENU),
-                false, mSettingsObserver);
-        mContext.getContentResolver().registerContentObserver(Settings.PAC.getUriFor(Settings.PAC.NAVIGATION_MENU_FORCE),
-                false, mSettingsObserver);
+        final ContentResolver r = mContext.getContentResolver();
 
-        mObserver.observe();
+        if (mSettingsObserver == null) {
+            mSettingsObserver = new ContentObserver(new Handler()) {
+                @Override
+                public void onChange(boolean selfChange) {
+                    mUserButtons = Settings.PAC.getString(r, Settings.PAC.NAVIGATION_BAR_BUTTONS);
+                    mNavigationBarForceMenu = Settings.PAC.getBoolean(r, Settings.PAC.NAVIGATION_MENU_FORCE, false);
+                    mNavigationBarMenuLocation = Settings.PAC.getInt(r, Settings.PAC.NAVIGATION_MENU, 0);
+                    mShowDpadKeys = Settings.PAC.getBoolean(r, Settings.PAC.NAVIGATION_BAR_DPAD_KEYS, false);
+                    setupNavigationButtons();
+                    setMenuVisibility(mShowMenu, true /* force */);
+                }
+            };
+
+            r.registerContentObserver(Settings.PAC.getUriFor(Settings.PAC.NAVIGATION_BAR_BUTTONS),
+                    false, mSettingsObserver);
+            r.registerContentObserver(Settings.PAC.getUriFor(Settings.PAC.NAVIGATION_BAR_DPAD_KEYS),
+                    false, mSettingsObserver);
+            r.registerContentObserver(Settings.PAC.getUriFor(Settings.PAC.NAVIGATION_MENU),
+                    false, mSettingsObserver);
+            r.registerContentObserver(Settings.PAC.getUriFor(Settings.PAC.NAVIGATION_MENU_FORCE),
+                    false, mSettingsObserver);
+        }
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
 
-        mContext.getContentResolver().unregisterContentObserver(mSettingsObserver);
-
-        mObserver.unobserve();
+        if (mSettingsObserver != null) {
+            mContext.getContentResolver().unregisterContentObserver(mSettingsObserver);
+            mSettingsObserver = null;
+        }
     }
 
-    private void readUserConfig() {
-        mNavigationBarForceMenu = Settings.PAC.getBoolean(getContext().getContentResolver(),
-                Settings.PAC.NAVIGATION_MENU_FORCE, false);
-        mNavigationBarMenuLocation = Settings.PAC.getInt(getContext().getContentResolver(),
-                Settings.PAC.NAVIGATION_MENU, 0);
-
+    private void setupNavigationButtons() {
         mNavButtons.clear();
-        String buttons = Settings.PAC.getString(getContext().getContentResolver(), Settings.PAC.NAVIGATION_BAR_BUTTONS);
-        if (buttons == null || buttons.isEmpty()) {
+        if (mUserButtons == null || mUserButtons.isEmpty()) {
             // use default buttons
             mNavButtons.add(new AwesomeButtonInfo(
                     AwesomeConstant.ACTION_BACK.value(),    /* short press */
@@ -802,7 +800,7 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
              *
              * singleTapAction,doubleTapAction,longPressAction,iconUri|singleTap...
              */
-            String[] userButtons = buttons.split("\\|");
+            String[] userButtons = mUserButtons.split("\\|");
             if (userButtons != null) {
                 for (String button : userButtons) {
                     String[] actions = button.split(",", 4);
@@ -810,11 +808,7 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
                 }
             }
         }
-        mShowDpadKeys = Settings.PAC.getBoolean(getContext().getContentResolver(), Settings.PAC.NAVIGATION_BAR_DPAD_KEYS, false);
-    }
 
-    private void setupNavigationButtons() {
-        readUserConfig();
         final boolean stockThreeButtonLayout = mNavButtons.size() == 3;
         int separatorSize = (int) mMenuButtonWidth;
 
@@ -834,7 +828,7 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
             // navbar left cursor
             AwesomeButtonInfo leftCursorButtonInfo = new AwesomeButtonInfo(AwesomeConstant.ACTION_DPAD_LEFT.value(),
                     null, null, null);
-            KeyButtonView leftCursorButton = new KeyButtonView(getContext(), null);
+            KeyButtonView leftCursorButton = new KeyButtonView(mContext, null);
             leftCursorButton.setButtonActions(leftCursorButtonInfo);
             leftCursorButton.setImageResource(R.drawable.ic_sysbar_ime_left);
             leftCursorButton.setLayoutParams(getLayoutParams(landscape, mMenuButtonWidth, 0f));
@@ -851,7 +845,7 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
             // legacy menu button
             AwesomeButtonInfo menuButtonInfo = new AwesomeButtonInfo(AwesomeConstant.ACTION_MENU.value(),
                     null, null, null);
-            KeyButtonView menuButton = new KeyButtonView(getContext(), null);
+            KeyButtonView menuButton = new KeyButtonView(mContext, null);
             menuButton.setButtonActions(menuButtonInfo);
             menuButton.setImageResource(R.drawable.ic_sysbar_menu);
             menuButton.setLayoutParams(getLayoutParams(landscape, mMenuButtonWidth, 0f));
@@ -887,7 +881,7 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
             for (int j = 0; j < mNavButtons.size(); j++) {
                 // create the button
                 AwesomeButtonInfo info = mNavButtons.get(j);
-                KeyButtonView button = new KeyButtonView(getContext(), null);
+                KeyButtonView button = new KeyButtonView(mContext, null);
                 button.setButtonActions(info);
                 if (mTablet) {
                     if (mNavButtons.size() <= 4) {
@@ -928,7 +922,7 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
             // legacy menu button
             AwesomeButtonInfo menuButtonInfoTwo = new AwesomeButtonInfo(AwesomeConstant.ACTION_MENU.value(),
                     null, null, null);
-            KeyButtonView menuButtonTwo = new KeyButtonView(getContext(), null);
+            KeyButtonView menuButtonTwo = new KeyButtonView(mContext, null);
             menuButtonTwo.setButtonActions(menuButtonInfoTwo);
             menuButtonTwo.setImageResource(R.drawable.ic_sysbar_menu);
             menuButtonTwo.setLayoutParams(getLayoutParams(landscape, mMenuButtonWidth, 0f));
@@ -945,7 +939,7 @@ public class NavigationBarView extends LinearLayout implements BaseStatusBar.Nav
             // navbar right cursor
             AwesomeButtonInfo rightCursorButtonInfo = new AwesomeButtonInfo(AwesomeConstant.ACTION_DPAD_RIGHT.value(),
                     null, null, null);
-            KeyButtonView rightCursorButton = new KeyButtonView(getContext(), null);
+            KeyButtonView rightCursorButton = new KeyButtonView(mContext, null);
             rightCursorButton.setButtonActions(rightCursorButtonInfo);
             rightCursorButton.setImageResource(R.drawable.ic_sysbar_ime_right);
             rightCursorButton.setLayoutParams(getLayoutParams(landscape, mMenuButtonWidth, 0f));
