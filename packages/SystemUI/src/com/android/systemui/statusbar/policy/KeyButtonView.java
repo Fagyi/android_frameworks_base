@@ -24,16 +24,16 @@ import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.RectF;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
-import android.hardware.input.InputManager;
+import android.net.Uri;
 import android.os.PowerManager;
+import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.HapticFeedbackConstants;
-import android.view.InputDevice;
-import android.view.KeyCharacterMap;
-import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SoundEffectConstants;
 import android.view.View;
@@ -42,9 +42,13 @@ import android.view.ViewDebug;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.ImageView;
 
+import com.android.internal.statusbar.IStatusBarService;
+import com.android.internal.util.aokp.AwesomeAction;
+import com.android.internal.util.aokp.AwesomeConstants.AwesomeConstant;
+import com.android.internal.util.aokp.NavBarHelpers;
 import com.android.systemui.R;
-import com.android.systemui.statusbar.phone.NavbarEditor;
-import com.android.systemui.statusbar.phone.NavbarEditor.ButtonInfo;
+
+import java.io.File;
 
 public class KeyButtonView extends ImageView {
     private static final String TAG = "StatusBar.KeyButtonView";
@@ -52,12 +56,14 @@ public class KeyButtonView extends ImageView {
 
     final float GLOW_MAX_SCALE_FACTOR = 1.8f;
     public static final float DEFAULT_QUIESCENT_ALPHA = 0.70f;
-    public static final int CURSOR_REPEAT_FLAGS = KeyEvent.FLAG_SOFT_KEYBOARD
-            | KeyEvent.FLAG_KEEP_TOUCH_MODE;
+
+    private final int mLongPressTimeout;
+
+    public static final String NULL_ACTION = AwesomeConstant.ACTION_NULL.value();
+    public static final String RECENTS_ACTION = AwesomeConstant.ACTION_RECENTS.value();
 
     long mDownTime;
-    int mCode;
-    boolean mIsSmall;
+    long mUpTime;
     int mTouchSlop;
     Drawable mGlowBG;
     int mGlowBgId;
@@ -67,33 +73,39 @@ public class KeyButtonView extends ImageView {
     float mDrawingAlpha = 1f;
     @ViewDebug.ExportedProperty(category = "drawing")
     float mQuiescentAlpha = DEFAULT_QUIESCENT_ALPHA;
-    boolean mSupportsLongPress = true;
-    boolean mInEditMode;
     RectF mRect = new RectF();
     AnimatorSet mPressedAnim;
     Animator mAnimateToQuiescent = new ObjectAnimator();
 
     private PowerManager mPm;
-    private boolean mPerformedLongClick;
+
+    AwesomeButtonInfo mActions;
+
+    protected static IStatusBarService mBarService;
+    public static synchronized void getStatusBarInstance() {
+        if (mBarService == null) {
+            mBarService = IStatusBarService.Stub.asInterface(
+                    ServiceManager.getService(Context.STATUS_BAR_SERVICE));
+        }
+    }
+
+    boolean mHasSingleAction = true, mHasDoubleAction, mHasLongAction;
+    boolean mIsRecentsAction = false, mIsRecentsSingleAction, mIsRecentsLongAction, mIsRecentsDoubleTapAction;
+    volatile boolean mRecentsPreloaded;
 
     Runnable mCheckLongPress = new Runnable() {
         public void run() {
             if (isPressed()) {
-                // Log.d("KeyButtonView", "longpressed: " + this);
-                if (mCode == KeyEvent.KEYCODE_DPAD_LEFT || mCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                    sendEvent(KeyEvent.ACTION_UP, CURSOR_REPEAT_FLAGS,
-                            System.currentTimeMillis(), false);
-                    sendEvent(KeyEvent.ACTION_DOWN, CURSOR_REPEAT_FLAGS,
-                            System.currentTimeMillis(), false);
-                    postDelayed(mCheckLongPress, ViewConfiguration.getKeyRepeatDelay());
-                } else if (mCode != 0) {
-                    sendEvent(KeyEvent.ACTION_DOWN, KeyEvent.FLAG_LONG_PRESS);
-                    sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_LONG_CLICKED);
-                } else {
-                    // Just an old-fashioned ImageView
-                    mPerformedLongClick = true;
-                    performLongClick();
-                }
+                removeCallbacks(mSingleTap);
+                doLongPress();
+            }
+        }
+    };
+    private Runnable mSingleTap = new Runnable() {
+        @Override
+        public void run() {
+            if (!isPressed()) {
+                doSinglePress();
             }
         }
     };
@@ -105,25 +117,61 @@ public class KeyButtonView extends ImageView {
     public KeyButtonView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs);
 
-        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.KeyButtonView,
-                defStyle, 0);
-
-        mCode = a.getInteger(R.styleable.KeyButtonView_keyCode, 0);
-        mSupportsLongPress = a.getBoolean(R.styleable.KeyButtonView_keyRepeat, true);
-
-        mGlowBgId = a.getResourceId(R.styleable.KeyButtonView_glowBackground, 0);
-        mGlowBG = a.getDrawable(R.styleable.KeyButtonView_glowBackground);
         setDrawingAlpha(mQuiescentAlpha);
         if (mGlowBG != null) {
             mGlowWidth = mGlowBG.getIntrinsicWidth();
             mGlowHeight = mGlowBG.getIntrinsicHeight();
         }
 
-        a.recycle();
+        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.KeyButtonView,
+                defStyle, 0);
 
+        mGlowBgId = a.getResourceId(R.styleable.KeyButtonView_glowBackground, 0);
         setClickable(true);
         mTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        mLongPressTimeout = ViewConfiguration.getLongPressTimeout();
+        setLongClickable(false);
+
         mPm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+    }
+
+    public void setButtonActions(AwesomeButtonInfo actions) {
+        this.mActions = actions;
+
+        setTag(mActions.singleAction); // should be OK even if it's null
+
+        setImage();
+
+        mHasSingleAction = mActions != null && (mActions.singleAction != null);
+        mHasLongAction = mActions != null && mActions.longPressAction != null;
+        mHasDoubleAction = mActions != null && mActions.doubleTapAction != null;
+
+        mIsRecentsSingleAction = (mHasSingleAction && mActions.singleAction.equals(RECENTS_ACTION));
+        mIsRecentsLongAction = (mHasLongAction && mActions.longPressAction.equals(RECENTS_ACTION));
+        mIsRecentsDoubleTapAction = (mHasDoubleAction && mActions.doubleTapAction.equals(RECENTS_ACTION));
+
+        if (mIsRecentsSingleAction || mIsRecentsLongAction || mIsRecentsDoubleTapAction) {
+            mIsRecentsAction = true;
+            getStatusBarInstance();
+        }
+
+        setLongClickable(mHasLongAction);
+        Log.e(TAG, "Adding a navbar button in landscape or portrait");
+    }
+
+    public void setImage() {
+        // set image
+        if (mActions.iconUri != null && mActions.iconUri.length() > 0) {
+            // custom icon from the URI here
+            File f = new File(Uri.parse(mActions.iconUri).getPath());
+            if (f.exists()) {
+                setImageDrawable(new BitmapDrawable(getResources(), f.getAbsolutePath()));
+            }
+        } else if (mActions.singleAction != null) {
+            setImageDrawable(NavBarHelpers.getIconImage(mContext, mActions.singleAction));
+        } else {
+            setImageResource(R.drawable.ic_sysbar_null);
+        }
     }
 
     public void updateResources(Resources res) {
@@ -138,13 +186,13 @@ public class KeyButtonView extends ImageView {
             canvas.save();
             final int w = getWidth();
             final int h = getHeight();
-            final float aspect = (float)mGlowWidth / mGlowHeight;
-            final int drawW = (int)(h*aspect);
+            final float aspect = (float) mGlowWidth / mGlowHeight;
+            final int drawW = (int) (h * aspect);
             final int drawH = h;
-            final int margin = (drawW-w)/2;
-            canvas.scale(mGlowScale, mGlowScale, w*0.5f, h*0.5f);
-            mGlowBG.setBounds(-margin, 0, drawW-margin, drawH);
-            mGlowBG.setAlpha((int)(mDrawingAlpha * mGlowAlpha * 255));
+            final int margin = (drawW - w) / 2;
+            canvas.scale(mGlowScale, mGlowScale, w * 0.5f, h * 0.5f);
+            mGlowBG.setBounds(-margin, 0, drawW - margin, drawH);
+            mGlowBG.setAlpha((int) (mDrawingAlpha * mGlowAlpha * 255));
             mGlowBG.draw(canvas);
             canvas.restore();
             mRect.right = w;
@@ -217,23 +265,23 @@ public class KeyButtonView extends ImageView {
             com.android.systemui.SwipeHelper.invalidateGlobalRegion(
                     this,
                     new RectF(getLeft() - rx,
-                              getTop() - ry,
-                              getRight() + rx,
-                              getBottom() + ry));
+                            getTop() - ry,
+                            getRight() + rx,
+                            getBottom() + ry));
 
             // also invalidate our immediate parent to help avoid situations where nearby glows
             // interfere
-            ((View)getParent()).invalidate();
+            if(((View) getParent()) != null) {
+            ((View) getParent()).invalidate();
+            }
         }
     }
 
     public void setPressed(boolean pressed) {
         if (mGlowBG != null) {
             if (pressed != isPressed()) {
-
                 // A lot of stuff is about to happen. Lets get ready.
-                mPm.cpuBoost(750000);
-
+                mPm.cpuBoost(1500000);
                 if (mPressedAnim != null && mPressedAnim.isRunning()) {
                     mPressedAnim.cancel();
                 }
@@ -245,17 +293,17 @@ public class KeyButtonView extends ImageView {
                         mGlowAlpha = mQuiescentAlpha;
                     setDrawingAlpha(1f);
                     as.playTogether(
-                        ObjectAnimator.ofFloat(this, "glowAlpha", 1f),
-                        ObjectAnimator.ofFloat(this, "glowScale", GLOW_MAX_SCALE_FACTOR)
+                            ObjectAnimator.ofFloat(this, "glowAlpha", 1f),
+                            ObjectAnimator.ofFloat(this, "glowScale", GLOW_MAX_SCALE_FACTOR)
                     );
                     as.setDuration(50);
                 } else {
                     mAnimateToQuiescent.cancel();
                     mAnimateToQuiescent = animateToQuiescent();
                     as.playTogether(
-                        ObjectAnimator.ofFloat(this, "glowAlpha", 0f),
-                        ObjectAnimator.ofFloat(this, "glowScale", 1f),
-                        mAnimateToQuiescent
+                            ObjectAnimator.ofFloat(this, "glowAlpha", 0f),
+                            ObjectAnimator.ofFloat(this, "glowScale", 1f),
+                            mAnimateToQuiescent
                     );
                     as.setDuration(500);
                 }
@@ -265,82 +313,36 @@ public class KeyButtonView extends ImageView {
         super.setPressed(pressed);
     }
 
-    public void setEditMode(boolean editMode) {
-        mInEditMode = editMode;
-        updateVisibility();
-    }
-
-    public void setInfo(ButtonInfo item, boolean isVertical, boolean isSmall) {
-        final Resources res = getResources();
-        final int keyDrawableResId;
-
-        setTag(item);
-        setContentDescription(res.getString(item.contentDescription));
-        mCode = item.keyCode;
-        mIsSmall = isSmall;
-
-        if (isSmall) {
-            keyDrawableResId = item.sideResource;
-        } else if (!isVertical) {
-            keyDrawableResId = item.portResource;
-        } else {
-            keyDrawableResId = item.landResource;
-        }
-        // The reason for setImageDrawable vs setImageResource is because setImageResource calls
-        // relayout() w/o any checks. setImageDrawable performs size checks and only calls relayout
-        // if necessary. We rely on this because otherwise the setX/setY attributes which are post
-        // layout cause it to mess up the layout.
-        setImageDrawable(res.getDrawable(keyDrawableResId));
-        updateVisibility();
-    }
-
-    private void updateVisibility() {
-        if (mInEditMode) {
-            setVisibility(View.VISIBLE);
-            return;
-        }
-
-        ButtonInfo info = (ButtonInfo) getTag();
-        if (info == NavbarEditor.NAVBAR_EMPTY) {
-            setVisibility(mIsSmall ? View.INVISIBLE : View.GONE);
-        } else if (info == NavbarEditor.NAVBAR_CONDITIONAL_MENU) {
-            setVisibility(View.INVISIBLE);
-        }
-    }
-
-    private boolean supportsLongPress() {
-        return mSupportsLongPress && getTag() != NavbarEditor.NAVBAR_HOME;
-    }
-
     public boolean onTouchEvent(MotionEvent ev) {
-        if (mInEditMode) {
-            return false;
-        }
         final int action = ev.getAction();
         int x, y;
 
         switch (action) {
             case MotionEvent.ACTION_DOWN:
-                //Log.d("KeyButtonView", "press");
+                if (mIsRecentsAction && mRecentsPreloaded == false) preloadRecentApps();
                 mDownTime = SystemClock.uptimeMillis();
                 setPressed(true);
-                if (mCode == KeyEvent.KEYCODE_DPAD_LEFT || mCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                    sendEvent(KeyEvent.ACTION_DOWN, KeyEvent.FLAG_VIRTUAL_HARD_KEY
-                            | KeyEvent.FLAG_KEEP_TOUCH_MODE, mDownTime, false);
-                } else if (mCode != 0) {
-                    sendEvent(KeyEvent.ACTION_DOWN, 0, mDownTime);
-                } else {
-                    // Provide the same haptic feedback that the system offers for virtual keys.
-                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                if (hasSingleTapAction()) {
+                    removeCallbacks(mSingleTap);
                 }
-                if (supportsLongPress()) {
-                    removeCallbacks(mCheckLongPress);
-                    postDelayed(mCheckLongPress, ViewConfiguration.getLongPressTimeout());
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                long diff = mDownTime - mUpTime; // difference between last up and now
+                if (hasDoubleTapAction() && diff <= 200) {
+                    doDoubleTap();
+                } else {
+                    if (hasLongTapAction()) {
+                        removeCallbacks(mCheckLongPress);
+                        postDelayed(mCheckLongPress, mLongPressTimeout);
+                    }
+
+                    if (hasSingleTapAction()) {
+                        postDelayed(mSingleTap, 200);
+                    }
                 }
                 break;
             case MotionEvent.ACTION_MOVE:
-                x = (int)ev.getX();
-                y = (int)ev.getY();
+                x = (int) ev.getX();
+                y = (int) ev.getY();
                 setPressed(x >= -mTouchSlop
                         && x < getWidth() + mTouchSlop
                         && y >= -mTouchSlop
@@ -348,58 +350,168 @@ public class KeyButtonView extends ImageView {
                 break;
             case MotionEvent.ACTION_CANCEL:
                 setPressed(false);
-                if (mCode != 0) {
-                    sendEvent(KeyEvent.ACTION_UP, KeyEvent.FLAG_CANCELED);
+                if (hasSingleTapAction()) {
+                    removeCallbacks(mSingleTap);
                 }
-                if (supportsLongPress()) {
+                if (hasLongTapAction()) {
                     removeCallbacks(mCheckLongPress);
+
                 }
+                if (mRecentsPreloaded == true) cancelPreloadRecentApps();
                 break;
             case MotionEvent.ACTION_UP:
-                final boolean doIt = isPressed();
-                setPressed(false);
-                if (mCode != 0) {
-                    if (doIt) {
-                        sendEvent(KeyEvent.ACTION_UP, 0);
-                        sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);
-                        playSoundEffect(SoundEffectConstants.CLICK);
-                    } else {
-                        sendEvent(KeyEvent.ACTION_UP, KeyEvent.FLAG_CANCELED);
-                    }
-                } else {
-                    // no key code, just a regular ImageView
-                    if (doIt && !mPerformedLongClick) {
-                        performClick();
-                    }
-                }
-                if (supportsLongPress()) {
+                mUpTime = SystemClock.uptimeMillis();
+
+                if (hasLongTapAction()) {
                     removeCallbacks(mCheckLongPress);
                 }
-                mPerformedLongClick = false;
+                final boolean doIt = isPressed();
+                setPressed(false);
+                if (doIt) {
+                    playSoundEffect(SoundEffectConstants.CLICK);
+                }
+
+                if (!hasDoubleTapAction() && !hasLongTapAction()) {
+                    // a little optimization here
+                    removeCallbacks(mSingleTap);
+                    doSinglePress();
+                }
+
                 break;
         }
-
         return true;
     }
 
-    void sendEvent(int action, int flags) {
-        sendEvent(action, flags, SystemClock.uptimeMillis());
+    private boolean hasLongTapAction() {
+        return mHasLongAction;
     }
 
-    void sendEvent(int action, int flags, long when) {
-        sendEvent(action, flags, when, true);
+    private boolean hasDoubleTapAction() {
+        return mHasDoubleAction;
     }
 
-    void sendEvent(int action, int flags, long when, boolean applyDefaultFlags) {
-        final int repeatCount = (flags & KeyEvent.FLAG_LONG_PRESS) != 0 ? 1 : 0;
-        if (applyDefaultFlags) {
-            flags |= KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY;
+    private boolean hasSingleTapAction() {
+        return mHasSingleAction;
+    }
+
+    private void doSinglePress() {
+        if (callOnClick()) {
+            // cool
+            sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);
+        } else if (mIsRecentsSingleAction) {
+            try {
+                mBarService.toggleRecentApps();
+                sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);
+                mRecentsPreloaded = false;
+            } catch (RemoteException e) {
+                Log.e(TAG, "RECENTS ACTION FAILED");
+            }
+            return;
         }
-        final KeyEvent ev = new KeyEvent(mDownTime, when, action, mCode, repeatCount,
-                0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
-                flags,
-                InputDevice.SOURCE_KEYBOARD);
-        InputManager.getInstance().injectInputEvent(ev,
-                InputManager.INJECT_INPUT_EVENT_MODE_ASYNC);
+
+        if (mActions != null) {
+            if (mActions.singleAction != null) {
+                AwesomeAction.launchAction(mContext, mActions.singleAction);
+                sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);
+            }
+        }
+    }
+
+    private void doDoubleTap() {
+        if (hasDoubleTapAction()) {
+            removeCallbacks(mSingleTap);
+            if (mIsRecentsDoubleTapAction) {
+                try {
+                    mBarService.toggleRecentApps();
+                    mRecentsPreloaded = false;
+                } catch (RemoteException e) {
+                    Log.e(TAG, "RECENTS ACTION FAILED");
+                }
+            } else {
+                AwesomeAction.launchAction(mContext, mActions.doubleTapAction);
+            }
+        }
+    }
+
+    private void doLongPress() {
+        if (hasLongTapAction()) {
+            removeCallbacks(mSingleTap);
+            if (mIsRecentsLongAction) {
+                try {
+                    mBarService.toggleRecentApps();
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                    sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_LONG_CLICKED);
+                    mRecentsPreloaded = false;
+                } catch (RemoteException e) {
+                    Log.e(TAG, "RECENTS ACTION FAILED");
+                }
+            } else {
+                AwesomeAction.launchAction(mContext, mActions.longPressAction);
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_LONG_CLICKED);
+            }
+        }
+    }
+
+    private void cancelPreloadRecentApps() {
+        if (mRecentsPreloaded == false) return;
+        try {
+            mBarService.cancelPreloadRecentApps();
+        } catch (RemoteException e) {
+            // use previous state
+            return;
+        }
+        mRecentsPreloaded = false;
+    }
+
+    private void preloadRecentApps() {
+        try {
+            mBarService.preloadRecentApps();
+        } catch (RemoteException e) {
+            mRecentsPreloaded = false;
+            return;
+        }
+        mRecentsPreloaded = true;
+    }
+
+    public void setGlowBackground(int resId) {
+        mGlowBG = getResources().getDrawable(resId);
+        if (mGlowBG != null) {
+            setDrawingAlpha(mDrawingAlpha);
+            mGlowWidth = mGlowBG.getIntrinsicWidth();
+            mGlowHeight = mGlowBG.getIntrinsicHeight();
+        }
+    }
+
+    public static class AwesomeButtonInfo {
+        String singleAction, doubleTapAction, longPressAction, iconUri;
+
+        public AwesomeButtonInfo(String singleTap, String doubleTap, String longPress, String uri) {
+            this.singleAction = singleTap;
+            this.doubleTapAction = doubleTap;
+            this.longPressAction = longPress;
+            this.iconUri = uri;
+
+            if (singleAction != null) {
+                if ((singleAction.isEmpty()
+                        || singleAction.equals(NULL_ACTION))) {
+                    singleAction = null;
+                }
+            }
+
+            if (doubleTapAction != null) {
+                if ((doubleTapAction.isEmpty()
+                        || doubleTapAction.equals(NULL_ACTION))) {
+                    doubleTapAction = null;
+                }
+            }
+
+            if (longPressAction != null) {
+                if ((longPressAction.isEmpty()
+                        || longPressAction.equals(NULL_ACTION))) {
+                    longPressAction = null;
+                }
+            }
+        }
     }
 }

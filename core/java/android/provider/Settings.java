@@ -724,7 +724,7 @@ public final class Settings {
      */
     @SdkConstant(SdkConstantType.ACTIVITY_INTENT_ACTION)
     public static final String ACTION_NOTIFICATION_LISTENER_SETTINGS
-            = "android.settings.NOTIFICATION_LISTENER_SETTINGS";
+            = "android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS";
 
     /**
      * Activity Action: Show settings for video captioning.
@@ -4034,13 +4034,6 @@ public final class Settings {
         @Deprecated
         public static final String WIFI_WATCHDOG_PING_TIMEOUT_MS =
             Secure.WIFI_WATCHDOG_PING_TIMEOUT_MS;
-
-        /**
-         * boolean value. toggles using arrow key locations on nav bar
-         * as left and right dpad keys
-         * @hide
-         */
-        public static final String NAVIGATION_BAR_MENU_ARROW_KEYS = "navigation_bar_menu_arrow_keys";
     }
 
     /**
@@ -9258,10 +9251,44 @@ public final class Settings {
         public static final String CUSTOM_OVERFLING_DISTANCE = "custom_overfling_distance";
 
         /**
-         *
          * @hide
          */
         public static final String ANIMATION_TOAST = "animation_toast";
+
+        /**
+         * @hide
+         */
+        public static final String NAVIGATION_BAR_BUTTONS = "navigation_bar_buttons";
+
+        /**
+         * Show arrow buttons as left and right dpad keys
+         * @hide
+         */
+        public static final String NAVIGATION_BAR_DPAD_KEYS = "navigation_bar_dpad_keys";
+
+        /**
+         * @hide
+         */
+        public static final String NAVIGATION_MENU = "navigation_menu";
+
+        /**
+         * @hide
+         */
+        public static final String NAVIGATION_MENU_FORCE = "navigation_menu_force";
+
+        /**
+         * Recent card background color
+         *
+         * @hide
+         */
+        public static final String RECENT_CARD_BG_COLOR = "recent_card_bg_color";
+
+        /**
+         * Recent card text color
+         *
+         * @hide
+         */
+        public static final String RECENT_CARD_TEXT_COLOR = "recent_card_text_color";
 
     }
 

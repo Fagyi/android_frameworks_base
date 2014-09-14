@@ -25,9 +25,8 @@ import android.view.View;
 import android.view.animation.AccelerateInterpolator;
 
 import com.android.internal.statusbar.IStatusBarService;
+import com.android.internal.util.aokp.AwesomeConstants.AwesomeConstant;
 import com.android.systemui.R;
-import com.android.systemui.statusbar.phone.NavbarEditor;
-import com.android.systemui.statusbar.phone.NavbarEditor.ButtonInfo;
 import com.android.systemui.statusbar.policy.KeyButtonView;
 
 public final class NavigationBarTransitions extends BarTransitions {
@@ -104,11 +103,16 @@ public final class NavigationBarTransitions extends BarTransitions {
     private void applyMode(int mode, boolean animate, boolean force) {
         // apply to key buttons
         final float alpha = alphaForMode(mode);
-        setKeyButtonViewQuiescentAlpha(NavbarEditor.NAVBAR_HOME, alpha, animate);
-        setKeyButtonViewQuiescentAlpha(NavbarEditor.NAVBAR_RECENT, alpha, animate);
-        setKeyButtonViewQuiescentAlpha(NavbarEditor.NAVBAR_CONDITIONAL_MENU, alpha, animate);
-        setKeyButtonViewQuiescentAlpha(NavbarEditor.NAVBAR_ALWAYS_MENU, alpha, animate);
-        setKeyButtonViewQuiescentAlpha(NavbarEditor.NAVBAR_MENU_BIG, alpha, animate);
+        View[] views = mView.getAllButtons();
+
+        for(View v : views) {
+            if (AwesomeConstant.ACTION_BACK.value().equals(v.getTag())) {
+                // back button was skipped in original calculations
+                continue;
+            }
+            setKeyButtonViewQuiescentAlpha(v, alpha, animate);
+        }
+
         setKeyButtonViewQuiescentAlpha(mView.getSearchLight(), KEYGUARD_QUIESCENT_ALPHA, animate);
         setKeyButtonViewQuiescentAlpha(mView.getCameraButton(), KEYGUARD_QUIESCENT_ALPHA, animate);
         setKeyButtonViewQuiescentAlpha(mView.getNotifsButton(), KEYGUARD_QUIESCENT_ALPHA, animate);
@@ -121,15 +125,6 @@ public final class NavigationBarTransitions extends BarTransitions {
         fadeContent(mStatusBarBlocker, isTranslucent ? 1f : 0f);
     }
 
-    private void setKeyButtonViewQuiescentAlpha(ButtonInfo info, float alpha, boolean animate) {
-        for (View v : mView.mRotatedViews) {
-            View button = v == null ? null : v.findViewWithTag(info);
-            if (button != null) {
-                setKeyButtonViewQuiescentAlpha(button, alpha, animate);
-            }
-        }
-    }
-
     private float alphaForMode(int mode) {
         final boolean isOpaque = mode == MODE_OPAQUE || mode == MODE_LIGHTS_OUT;
         return isOpaque ? KeyButtonView.DEFAULT_QUIESCENT_ALPHA : 1f;
@@ -137,20 +132,17 @@ public final class NavigationBarTransitions extends BarTransitions {
 
     public void applyBackButtonQuiescentAlpha(int mode, boolean animate) {
         float backAlpha = 0;
-        backAlpha = maxVisibleQuiescentAlpha(backAlpha, mView.getSearchLight());
-        backAlpha = maxVisibleQuiescentAlpha(backAlpha, mView.getCameraButton());
-        backAlpha = maxVisibleQuiescentAlpha(backAlpha,
-                mView.findButton(NavbarEditor.NAVBAR_HOME));
-        backAlpha = maxVisibleQuiescentAlpha(backAlpha,
-                mView.findButton(NavbarEditor.NAVBAR_RECENT));
-        backAlpha = maxVisibleQuiescentAlpha(backAlpha,
-                mView.findButton(NavbarEditor.NAVBAR_CONDITIONAL_MENU));
-        backAlpha = maxVisibleQuiescentAlpha(backAlpha,
-                mView.findButton(NavbarEditor.NAVBAR_ALWAYS_MENU));
-        backAlpha = maxVisibleQuiescentAlpha(backAlpha,
-                mView.findButton(NavbarEditor.NAVBAR_MENU_BIG));
+        View[] views = mView.getAllButtons();
+        for(View v : views) {
+            if (AwesomeConstant.ACTION_BACK.value().equals(v.getTag())) {
+                // back button was skipped in original calculations
+                continue;
+            }
+            backAlpha = maxVisibleQuiescentAlpha(backAlpha, v);
+        }
+
         if (backAlpha > 0) {
-            setKeyButtonViewQuiescentAlpha(NavbarEditor.NAVBAR_BACK, backAlpha, animate);
+            setKeyButtonViewQuiescentAlpha(mView.getBackButton(), backAlpha, animate);
         }
     }
 
