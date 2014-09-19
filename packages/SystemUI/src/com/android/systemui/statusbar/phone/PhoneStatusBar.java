@@ -104,6 +104,8 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TabHost;
+import android.widget.TabHost.TabSpec;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -927,6 +929,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         if (mRecreating) {
             removeSidebarView();
         } else {
+            addActiveDisplayView();
             /* ChaosLab: GestureAnywhere - BEGIN */
             addGestureAnywhereView();
             /* ChaosLab: GestureAnywhere - END */
@@ -3016,7 +3019,13 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         if (mNavigationBarView != null) {
             mNavigationBarView.getBarTransitions().transitionTo(mNavigationBarMode,
                     shouldAnimateBarTransition(mNavigationBarMode, mNavigationBarWindowState));
-            int sbbMode = mStatusBarWindowState == WINDOW_STATE_HIDDEN ? MODE_TRANSPARENT : sbMode;
+            // The status bar blocker is only needed if both
+            // - the status bar is visible and
+            // - the navigation bar is translucent (as otherwise there is no
+            //   visual 'gap' which needs to be filled)
+            boolean sbbNeeded = mStatusBarWindowState != WINDOW_STATE_HIDDEN
+                    && mNavigationBarMode == MODE_TRANSLUCENT;
+            int sbbMode = sbbNeeded ? sbMode : MODE_TRANSPARENT;
             mNavigationBarView.getStatusBarBlockerTransitions().transitionTo(sbbMode, animateSb);
         }
     }
@@ -3090,7 +3099,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         mHandler.postDelayed(mUserAutohide, 350); // longer than app gesture -> flag clear
     }
 
-    private boolean areLightsOn() {
+    public boolean areLightsOn() {
         return 0 == (mSystemUiVisibility & View.SYSTEM_UI_FLAG_LOW_PROFILE);
     }
 
@@ -3110,6 +3119,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         }
     }
 
+    @Override
     public void topAppWindowChanged(boolean showMenu) {
         if (DEBUG) {
             Log.d(TAG, (showMenu?"showing":"hiding") + " the MENU button");
